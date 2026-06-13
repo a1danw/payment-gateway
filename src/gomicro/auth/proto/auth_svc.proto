@@ -1,0 +1,27 @@
+// template for grpc code - protoc generates boilerplate code based on this template
+syntax = "proto3";
+
+option go_package = "github.com/a1danw/gomicro/proto/pb";
+
+// first the api gateway hits the auth service (post req) to verify before its able to reach the money movement service
+// gateway uses the auth resp to verify and can then hit the money movement service
+// generated grpc files serialize/deserialize the structured data (messages/payloads endpoints receive and return)
+service AuthService { // 2 endpoints:
+	// data gets sent as binary(data is serialized) and sends the credentials, generated code deserializes it
+	rpc GetToken(Credentials) returns (Token) {} // when the client wants to get the token, it's going to need to pass us the users credentials and we return a token
+	rpc ValidateToken(Token) returns (User) {} // take in the token and returns user data
+}
+
+// messages gets serialized and deserialized via generated code
+message Token {
+	string jwt = 1;
+}
+
+message Credentials {
+	string userName = 1;
+	string password = 2;
+}
+
+message User {
+	string userId = 1;
+}
