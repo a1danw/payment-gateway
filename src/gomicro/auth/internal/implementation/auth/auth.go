@@ -4,13 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log"
+	"os"
+	"time"
+
 	pb "github.com/a1danw/gomicro/proto"
 	jwt "github.com/golang-jwt/jwt/v5"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"log"
-	"os"
-	"time"
 )
 
 // access db setup in auth/cmd/auth/server.go - db, err = sql.Open(dbDriver, dsn)
@@ -35,8 +36,7 @@ func (this *Implementation) GetToken(ctx context.Context, credentials *pb.Creden
 		password string
 	}
 
-	var u user // declare user
-	// select from db with prepared statement
+	var u user
 	stmt, err := this.db.Prepare("SELECT user_id, password from user WHERE user_id=? AND password=?")
 	if err != nil {
 		log.Println(err)

@@ -3,59 +3,97 @@ Payment gateway
 <img src="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/go/go-original-wordmark.svg" width="80px" height="60" />
 </h1>
 
-<h4 align="center">Golang/Grpc/Kubernetes/MySQL</h4>
-<p>Simplifies transactions between merchants and customers. The process begins when a customer wants to make a payment. Instead of the traditional method of handing over cash or swiping a card, the application leverages the power of barcodes. The merchant will simply scan a barcode presented by the customer and the payment will be instantly processed. No need for physical currency or complex card machines - the entire transaction is handled digitally and securely.</p>
-<div>
-    <img src="./readme-img/architecture.png" width="100%" height="200px">
-    <p>
-By adopting a microservice architecture, the payment application becomes incredibly flexible, scalable, and maintainable. Each step of the payment process is broken down into smaller, independent services that are responsible for specific tasks. The money movement service is responsible for each transaction, while another service handles authentication and security. These services communicate with each other through gRPC.
-</p>
+<h4 align="center">Go · gRPC · Protocol Buffers · MySQL</h4>
+
+This project explores a payment system built from Go microservices. A customer starts a transfer request, and the system is designed to check the balance, move funds between application accounts, record the result, and notify the customer. It models payment processing; it does not connect to banks or move real-world funds.
+
+> **Project status:** The auth service and its gRPC contract are present. The gateway handlers are still stubs, and the event-driven transaction services described below are the intended design—not yet a complete working flow. The repository is Go-based; Docker, Terraform, tracing, and Vault should only be listed as implemented once their configuration and integrations are added.
+
+## Intended transaction flow
+
+The event service coordinates the steps. Services publish events to a broker topic, and interested services subscribe to that topic so they can react without the coordinator calling each one directly.
+
+### High-level architecture
+
+This is the original high-level view of the gateway, auth, money movement, and downstream consumers. It describes the intended architecture; Kafka and the consumer services are not implemented in the current repository.
+
+<img src="./.github/architecture.png" width="100%" alt="Payment gateway microservices architecture">
 
 ```mermaid
 flowchart TD
-    Client(["🖥️ Client / Frontend"])
+    Client([Client / Frontend])
 
-    subgraph Synchronous ["Synchronous - gRPC"]
-        Gateway["API Gateway\n:8080 HTTP"]
-        Auth["Auth Service\n:9000 gRPC\n📄 MySQL"]
-        MM["Money Movement Service\ngRPC\n📄 MySQL"]
+    subgraph Synchronous["Synchronous - gRPC"]
+        Gateway["API Gateway - HTTP"]
+        Auth["Auth Service - gRPC / MySQL"]
+        MM["Money Movement Service - gRPC / MySQL"]
     end
 
-    subgraph Asynchronous ["Asynchronous - Kafka"]
-        Kafka[["Kafka Queue"]]
-        Email["Email Consumer\nService"]
-        Ledger["Ledger Consumer\nService\n📄 MySQL"]
+    subgraph Asynchronous["Asynchronous - Kafka (planned)"]
+        Kafka[[Kafka Queue]]
+        Email[Email Consumer]
+        Ledger["Ledger Consumer / MySQL"]
     end
 
-    Client -->|"HTTP POST /login\nHTTP POST /payment/authorize\nHTTP POST /payment/capture"| Gateway
-
-    Gateway -->|"GetToken (login)\nValidateToken (payment routes)\ngRPC"| Auth
-    Auth -->|JWT Token| Gateway
-
-    Gateway -->|"PaymentAuthorize\nPaymentCapture\ngRPC"| MM
-
-    MM -->|"Publish message\n(async)"| Kafka
-
-    Kafka -->|"Consume"| Email
-    Kafka -->|"Consume"| Ledger
+    Client -->|HTTP requests| Gateway
+    Gateway -->|Login / token validation| Auth
+    Auth -->|JWT| Gateway
+    Gateway -->|Payment requests| MM
+    MM -->|Publish transaction event| Kafka
+    Kafka -->|Consume event| Email
+    Kafka -->|Consume event| Ledger
 ```
 
-        <div style="height: 100px; width: 100%">
-        <img src="./readme-img/authentication.png">
-        </div>
-    <div style="display: inline-block; text-align: left; margin-left: 40px;">
-        <h3>Services</h3>
-        <ul>
-            <li>
-            <b>API Gateway service:</b> Communicates with interal services - both money movement and auth. Synchronous flows (api gateway to/from money movement and to/from auth) is done via gRPC. Gateway service - entry point of the micro service. </li>
-            <br/>
-            <li><b>Money movement service:</b> Indirectly (asynchronously) communicates with the 2 consumers: email and ledger. Money movement (storing the movement of the money) - contains a database. Shows customer to merchant and merchant back to customer incase of refunds etc money movement in a table.</li>
-             <br/>
-            <li><b>Kafka queue:</b> Async portion of the architecture. We don’t want the money movement service to wait on the processing of the email and ledger services, so the money movement service is placed on a message queue. After its put on a queue, the money movement service doesn’t have to think about what’s happening downstream anymore. It can immediately return the response back to the gateway and the gateway will return the response to the client.</li>
-             <br/>
-            <li><b>2 Consumer services:</b> email and ledger(contains database).</li>
-            <li>Email/Ledger services: Sends an email to the user with payment complete/failed and the ledger service consumes the message and persists to a ledger db which can be used for the accounting department etc to keep records of payments/accounting stuff.</li>
-        </ul>
-    </div>
+### Transaction steps
 
-</div>
+1. The client requests a transfer through the API gateway.
+2. The transaction service records it as **pending** and starts the workflow by publishing an event.
+3. The balance service checks whether the sender has enough funds. If not, the workflow is marked failed; if so, it continues.
+4. The transfer service performs the modeled transfer. On success, balances and transaction status are updated; on failure, the workflow is cancelled or marked failed.
+5. After completion or failure, a notification event can trigger an email or other customer update.
+
+Events are delivered through a broker topic. Services subscribe to the events they need, so the sender does not have to call every downstream service directly. A **dead-letter queue (DLQ)** holds messages that still fail after retries, for later investigation. Tracing and metrics help follow a transaction across services; a secret manager such as **Vault** can provide signing keys and other secrets.
+
+## Services and authentication
+
+- **API gateway:** Intended client entry point. The current HTTP handlers are placeholders.
+- **Auth service:** Implemented as a gRPC service. It checks login credentials against MySQL, issues a signed JWT, and validates tokens. The token currently identifies the user and expires after 24 hours; role-based permissions are not defined here.
+- **Money movement:** The SQL setup models wallets, accounts, and transaction records. The transfer workflow and event consumers are not implemented yet.
+- **Event, notification, tracing, and secret-management components:** Part of the intended design; not yet present as working services in this repository.
+
+The intended login flow is: credentials go to the auth service; valid credentials receive a JWT. For later protected requests, the gateway sends the JWT for validation. The current gateway does not yet enforce endpoint permissions. The sample auth query compares the supplied password directly with the database value; a production system should store a salted password hash instead. Do not send passwords in URL query parameters, and use HTTPS for client-facing requests.
+
+## Stack
+
+- **Go** for the services
+- **gRPC and Protocol Buffers** for typed service contracts and internal calls
+- **MySQL** for auth data and the planned wallet/transaction records
+- **Event broker** for the planned asynchronous workflow (the specific broker is not configured in the current code)
+
+## Generate the auth gRPC code
+
+Install the Protocol Buffers compiler and Go plugins:
+
+```sh
+brew install protobuf
+go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2
+```
+
+Make sure Go's binary directory is on your `PATH` so `protoc` can find the plugins:
+
+```sh
+echo "$(go env GOPATH)/bin"
+echo "$PATH"
+```
+
+If needed, add `export PATH="$(go env GOPATH)/bin:$PATH"` to `~/.zshrc`, then reload it with `source ~/.zshrc`.
+
+From the repository root, generate the files:
+
+```sh
+cd src/gomicro/auth
+protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative proto/auth_svc.proto
+```
+
+This generates `proto/auth_svc.pb.go` (message types and serialization code) and `proto/auth_svc_grpc.pb.go` (gRPC client/server code). These generated files should be regenerated when the `.proto` contract changes.

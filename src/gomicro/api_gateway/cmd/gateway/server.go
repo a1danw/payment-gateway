@@ -2,11 +2,11 @@ package main
 
 import "net/http"
 
-// api gateway is a synchronous blocking flow until it receives the responses from the services it calls
+// api gateway for synchronous blocking flow until it receives the responses from the services it calls
 func main() {
-	http.HandleFunc("/login", login)                                         // -> auth service
-	http.HandleFunc("/customer/payment/authorize", customerPaymentAuthorize) // -> auth service -> money movement service
-	http.HandleFunc("/customer/payment/capture", customerPaymentCapture)     // -> auth service -> money movement service
+	http.HandleFunc("/login", login)                                         // -> auth service via jwt
+	http.HandleFunc("/customer/payment/authorize", customerPaymentAuthorize) // when a customer wants to make a payment to a merchant, first authorize the payment then capture it (payment/capture)
+	http.HandleFunc("/customer/payment/capture", customerPaymentCapture)
 	http.HandleFunc("/customer/ledger", customerLedger)
 }
 

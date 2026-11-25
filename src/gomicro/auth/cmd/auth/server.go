@@ -33,7 +33,6 @@ func main() {
 	} // exit application after logging the error
 
 	// defer the closure of the db, in the event the application is exited/shutdown, make sure the db is closed/shutdown in a clean way
-	// defer function essentially will run before the application closes
 	defer func() {
 		if db.Close(); err != nil {
 			log.Printf("Error closing db: %s", err)
