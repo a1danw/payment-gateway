@@ -5,9 +5,7 @@ Payment gateway
 
 <h4 align="center">Go · gRPC · Protocol Buffers · MySQL</h4>
 
-This project explores a payment system built from Go microservices. A customer starts a transfer request, and the system is designed to check the balance, move funds between application accounts, record the result, and notify the customer. It models payment processing; it does not connect to banks or move real-world funds.
-
-> **Project status:** The auth service and its gRPC contract are present. The gateway handlers are still stubs, and the event-driven transaction services described below are the intended design—not yet a complete working flow. The repository is Go-based; Docker, Terraform, tracing, and Vault should only be listed as implemented once their configuration and integrations are added.
+This project models a barcode based payment flow: a merchant scans a customer’s code to start a payment. The backend is designed to check and record transfers between app wallets, then notify the customer. It demonstrates Go microservices and does not connect to banks or move real world funds.
 
 ## Intended transaction flow
 
